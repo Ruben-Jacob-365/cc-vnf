@@ -4,7 +4,10 @@ import matplotlib.pyplot as plt
 import random
 
 # create network model
-G = nx.erdos_renyi_graph(30,0.2, directed=False)
+while True:
+    G = nx.erdos_renyi_graph(10, 0.5, seed=123)
+    if nx.is_connected(G):
+        break
 
 for node in G.nodes():
     G.nodes[node]['VM_capacity'] = random.randint(2, 5)
@@ -15,8 +18,9 @@ for edge in G.edges():
 
 # Chains
 F = ['FW', 'IDS', 'LB', 'NAT', 'VPN']
+service_rate = 0.5
 
-num_chains = 1
+num_chains = 3
 chains = []
 
 # generate random chains
@@ -26,6 +30,11 @@ for i in range(num_chains):
     functions = np.random.choice(F, chain_length, replace=False)
     arrival_rate = np.random.uniform(0.3, 0.5)
     chains.append({"source":src, "destination":dst, "functions":functions, "arrival_rate":arrival_rate})
+
+# Print generated chains for debugging
+print("\n--- Generated Service Chains ---")
+for chain in chains:
+    print(f"Chain from {chain['source']} to {chain['destination']} with functions {chain['functions']} and arrival rate {chain['arrival_rate']:.2f}")
 
 # calculate score
 def compute_scores(G, chains, F):
@@ -53,29 +62,69 @@ def compute_scores(G, chains, F):
 
 scores = compute_scores(G, chains, F)
 
+Nf = {f: 0 for f in F}
+
+for chain in chains:
+    for f in chain['functions']:
+        Nf[f] = Nf.get(f, 0) + chain['arrival_rate']/service_rate
+
+# Print Nf for debugging
+print("\n--- Nf Values ---")
+for f in Nf:
+    print(f"Function {f}: Nf = {Nf[f]:.4f}")
+
+
 # deploy vnfs
-deployed_vnfs = { f: [] for f in F}
+alpha = 0.5 
+Lf = { (f1, f2): 1 if f1 != f2 and np.random.rand() < 0.5 else 0 for f1 in F for f2 in F } 
 
-for f in F:
-    available_nodes = set(G.nodes())
+deployed_vnfs = { f: [] for f in F }
+node_capacity = { v: G.nodes[v]['VM_capacity'] for v in G.nodes() }
 
-    for _ in range(np.random.randint(1,4)):
-        if not available_nodes:
-            break
+# Continue while any function has unmet demand
+while any(len(deployed_vnfs[f]) < int(np.ceil(Nf[f])) for f in F):
 
-        best_node = max(available_nodes, key=lambda x: scores[f][x])
-        deployed_vnfs[f].append(best_node)
-        available_nodes.remove(best_node)
-        
-        # reduce score for same function nearby
-        for neighbor in nx.neighbors(G, best_node):
-            scores[f][neighbor] *= 0.7 # decay factor
-        
-        # Increase score for parallelizeable functions
-        for f_prime in F:
-            if np.random.rand() < 0.5: #assunming 50% chance of parallelization
-                for neighbor in nx.neighbors(G, best_node):
-                    scores[f_prime][neighbor] *= 1.2 # boost factor
+    function_to_deploy = max((f for f in F if len(deployed_vnfs[f]) < int(np.ceil(Nf[f]))),
+                             key=lambda f: Nf[f] - len(deployed_vnfs[f]))
+
+    candidate_nodes = [v for v in G.nodes() if node_capacity[v] > 0]
+    if not candidate_nodes:
+        print("❌ No more nodes with available capacity.")
+        break
+
+    best_node = max(candidate_nodes, key=lambda v: scores[function_to_deploy][v])
+
+    # Deploy instance
+    deployed_vnfs[function_to_deploy].append(best_node)
+    node_capacity[best_node] -= 1
+
+    print(f"✅ Deployed function {function_to_deploy} on node {best_node}")
+
+    # Update scores for same function (decay based on distance)
+    for v in G.nodes():
+        if v == best_node:
+            d = 1
+        else:
+            try:
+                d = nx.shortest_path_length(G, source=best_node, target=v)
+            except nx.NetworkXNoPath:
+                continue
+        scores[function_to_deploy][v] *= alpha ** (1 / (d))  # avoid division by zero
+
+    # Update scores for different functions based on parallelism
+    for f_prime in F:
+        if f_prime == function_to_deploy:
+            continue
+        for v in G.nodes():
+            if v == best_node:
+                d = 1
+            else:
+                try:
+                    d = nx.shortest_path_length(G, source=best_node, target=v)
+                except nx.NetworkXNoPath:
+                    continue
+            boost = (1 + Lf.get((function_to_deploy, f_prime), 0)) ** (1 / (d))
+            scores[f_prime][v] *= boost
 
 # Print deployed VNF instances
 print("\n--- VNF Deployment ---")
@@ -83,72 +132,72 @@ for f in deployed_vnfs:
     print(f"Function {f}: Deployed at nodes {deployed_vnfs[f]}")
 
 # instance assignment
-def assign_instances(G, chains, deployed_vnfs):
-    assignments = {}
+# def assign_instances(G, chains, deployed_vnfs):
+#     assignments = {}
 
     
-    for chain in chains:
-        print(f"\nProcessing Chain: {chain['source']} → {chain['destination']} with functions {chain['functions']}")   
-        assigned_path = []
-        total_delay = 0
+#     for chain in chains:
+#         print(f"\nProcessing Chain: {chain['source']} → {chain['destination']} with functions {chain['functions']}")   
+#         assigned_path = []
+#         total_delay = 0
 
-        for f in chain['functions']:
-            possible_nodes = deployed_vnfs.get(f, [])
+#         for f in chain['functions']:
+#             possible_nodes = deployed_vnfs.get(f, [])
 
-            if not possible_nodes:
-                print(f"Function {f} not deployed")
-                possible_nodes = list(G.nodes())
+#             if not possible_nodes:
+#                 print(f"Function {f} not deployed")
+#                 possible_nodes = list(G.nodes())
 
-            best_node = min(possible_nodes, key=lambda x: nx.shortest_path_length(G, source=assigned_path[-1] if assigned_path else chain['source'], target=x, weight='delay'))
-            assigned_path.append(best_node)
+#             best_node = min(possible_nodes, key=lambda x: nx.shortest_path_length(G, source=assigned_path[-1] if assigned_path else chain['source'], target=x, weight='delay'))
+#             assigned_path.append(best_node)
 
-            delay = 0
+#             delay = 0
 
-            if len(assigned_path) > 1:
-                prev_node = assigned_path[-2]
-                delay = nx.shortest_path_length(G, source=prev_node, target=best_node, weight='delay')
-                total_delay += delay
-                print(f"→ Assigned {f} to Node {best_node} (Delay: {delay} ms)")
+#             if len(assigned_path) > 1:
+#                 prev_node = assigned_path[-2]
+#                 delay = nx.shortest_path_length(G, source=prev_node, target=best_node, weight='delay')
+#                 total_delay += delay
+#                 print(f"→ Assigned {f} to Node {best_node} (Delay: {delay} ms)")
 
-        print(f"✅ Total delay for chain: {total_delay} ms")
+#         print(f"✅ Total delay for chain: {total_delay} ms")
         
-        assignments[chain['source'], chain['destination']] = {"path":assigned_path, "delay":total_delay}
+#         assignments[chain['source'], chain['destination']] = {"path":assigned_path, "delay":total_delay}
 
-    return assignments
+#     return assignments
 
-assignments = assign_instances(G, chains, deployed_vnfs)
+# assignments = assign_instances(G, chains, deployed_vnfs)
 
-# plot
-import matplotlib.cm as cm
+# # plot
+# import matplotlib.cm as cm
 
-def draw_network_with_paths(G, assignments):
-    pos = nx.spring_layout(G)  # Layout for visualization
-    plt.figure(figsize=(12, 8))
+# def draw_network_with_paths(G, assignments):
+#     pos = nx.spring_layout(G)  # Layout for visualization
+#     plt.figure(figsize=(12, 8))
 
-    # Draw base network
-    nx.draw(G, pos, with_labels=True, node_size=500, node_color="lightgray", edge_color="gray")
+#     # Draw base network
+#     nx.draw(G, pos, with_labels=True, node_size=500, node_color="lightgray", edge_color="gray")
 
-    # Generate a unique color for each chain
-    num_chains = len(assignments)
-    colors = cm.rainbow(np.linspace(0, 1, num_chains))
+#     # Generate a unique color for each chain
+#     num_chains = len(assignments)
+#     colors = cm.rainbow(np.linspace(0, 1, num_chains))
 
-    for i, ((src, dst), data) in enumerate(assignments.items()):
-        print(f"Service Chain {src} → {dst}: Path {data['path']}")
-        path = data["path"]
+#     for i, ((src, dst), data) in enumerate(assignments.items()):
+#         print(f"Service Chain {src} → {dst}: Path {data['path']}")
+#         path = data["path"]
 
-        # Ensure at least one edge exists in the path
-        if len(path) < 2:
-            print(f"⚠️ Warning: Chain {src} → {dst} has an incomplete path: {path}")
-            continue  # Skip if no valid edges
+#         # Ensure at least one edge exists in the path
+#         if len(path) < 2:
+#             print(f"⚠️ Warning: Chain {src} → {dst} has an incomplete path: {path}")
+#             continue  # Skip if no valid edges
 
-        edges = [(path[i], path[i + 1]) for i in range(len(path) - 1)]
+#         edges = [(path[i], path[i + 1]) for i in range(len(path) - 1)]
         
-        # Draw the path in a unique color
-        nx.draw_networkx_edges(G, pos, edgelist=edges, edge_color=[colors[i]], width=2.5)
+#         # Draw the path in a unique color
+#         nx.draw_networkx_edges(G, pos, edgelist=edges, edge_color=[colors[i]], width=2.5)
 
-    plt.title("Service Chains and VNF Assignments")
-    plt.show()
+#     plt.title("Service Chains and VNF Assignments")
+#     plt.show()
 
-# Call the function
-draw_network_with_paths(G, assignments)
+# # Call the function
+# draw_network_with_paths(G, assignments)
 
