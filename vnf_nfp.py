@@ -166,19 +166,6 @@ while any(len(deployed_vnfs[f]) < int(np.ceil(Nf[f])) for f in F):
                     continue
             boost = (1 + Lf.get((function_to_deploy, f_prime), 0)) ** (1 / (d))
             scores[f_prime][v] *= boost
-        best_node = max(available_nodes, key=lambda x: scores[f][x])
-        deployed_vnfs[f].append(best_node)
-        available_nodes.remove(best_node)
-
-        # reduce score for same function nearby
-        for neighbor in nx.neighbors(G, best_node):
-            scores[f][neighbor] *= 0.7 # decay factor
-
-        # Increase score for parallelizeable functions
-        for f_prime in F:
-            if np.random.rand() < 0.5: #assunming 50% chance of parallelization
-                for neighbor in nx.neighbors(G, best_node):
-                    scores[f_prime][neighbor] *= 1.2 # boost factor
 
 # Print deployed VNF instances
 print("\n--- VNF Deployment ---")
@@ -194,11 +181,6 @@ for f in deployed_vnfs:
 #         print(f"\nProcessing Chain: {chain['source']} → {chain['destination']} with functions {chain['functions']}")   
 #         assigned_path = []
 #         total_delay = 0
-
-    for chain in chains:
-        print(f"\nProcessing Chain: {chain['source']} → {chain['destination']} with functions {chain['functions']}")
-        assigned_path = []
-        total_delay = 0
 
 #         for f in chain['functions']:
 #             possible_nodes = deployed_vnfs.get(f, [])
@@ -221,9 +203,6 @@ for f in deployed_vnfs:
 #         print(f"✅ Total delay for chain: {total_delay} ms")
         
 #         assignments[chain['source'], chain['destination']] = {"path":assigned_path, "delay":total_delay}
-        print(f"✅ Total delay for chain: {total_delay} ms")
-
-        assignments[chain['source'], chain['destination']] = {"path":assigned_path, "delay":total_delay}
 
 #     return assignments
 
@@ -256,10 +235,6 @@ for f in deployed_vnfs:
         
 #         # Draw the path in a unique color
 #         nx.draw_networkx_edges(G, pos, edgelist=edges, edge_color=[colors[i]], width=2.5)
-        edges = [(path[i], path[i + 1]) for i in range(len(path) - 1)]
-
-        # Draw the path in a unique color
-        nx.draw_networkx_edges(G, pos, edgelist=edges, edge_color=[colors[i]], width=2.5)
 
 #     plt.title("Service Chains and VNF Assignments")
 #     plt.show()
