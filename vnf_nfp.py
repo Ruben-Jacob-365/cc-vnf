@@ -20,21 +20,62 @@ for edge in G.edges():
 F = ['FW', 'IDS', 'LB', 'NAT', 'VPN']
 service_rate = 0.5
 
-num_chains = 3
+num_chains = 30
 chains = []
 
 # generate random chains
 for i in range(num_chains):
     src, dst = np.random.choice(list(G.nodes), 2, replace=False)
-    chain_length = np.random.randint(2,6)
+    chain_length = np.random.randint(2,5)
     functions = np.random.choice(F, chain_length, replace=False)
     arrival_rate = np.random.uniform(0.3, 0.5)
     chains.append({"source":src, "destination":dst, "functions":functions, "arrival_rate":arrival_rate})
+    print("Chain:",end=" ")
+    for j in functions:
+        print(j,end=" -> ")
+    print()
+# 2d matrix with P(fi,fj) values
+parallel_matrix = np.zeros((len(F), len(F)), dtype=int)
 
-# Print generated chains for debugging
-print("\n--- Generated Service Chains ---")
+for i in range(len(F)):
+    for j in range(i, len(F)):
+        if i == j:
+            parallel_matrix[i][j] = 0  # A function is always parallelizable with itself
+        else:
+            val = random.randint(0, 1)
+            parallel_matrix[i][j] = val
+            parallel_matrix[j][i] = val
+
+
+
+
+#for parallel likelihood
+
+parallel_likelihood = np.zeros((len(F), len(F)))
+
+# Create a mapping from function name to index for easy lookup
+func_index = {fname: idx for idx, fname in enumerate(F)}
+
+# Iterate over each chain
 for chain in chains:
-    print(f"Chain from {chain['source']} to {chain['destination']} with functions {chain['functions']} and arrival rate {chain['arrival_rate']:.2f}")
+    funcs = chain["functions"]
+    # Check all pairs of functions in the chain
+    for i in range(len(funcs)):
+        for j in range(i+1, len(funcs)):
+            fi, fj = funcs[i], funcs[j]
+            idx_i, idx_j = func_index[fi], func_index[fj]
+            # Check if the pair is parallelizable
+            if parallel_matrix[idx_i][idx_j] == 1:
+                parallel_likelihood[idx_i][idx_j] += 1/len(chains)
+                parallel_likelihood[idx_j][idx_i] += 1/len(chains)  # Keep it symmetric
+
+# Display as a DataFrame for better readability (optional)
+#display 2d matrix
+print("\n--- parallelizable likelihood ---")
+import pandas as pd
+parallel_df = pd.DataFrame(parallel_likelihood, index=F, columns=F)
+print(parallel_df)
+
 
 # calculate score
 def compute_scores(G, chains, F):
@@ -125,6 +166,19 @@ while any(len(deployed_vnfs[f]) < int(np.ceil(Nf[f])) for f in F):
                     continue
             boost = (1 + Lf.get((function_to_deploy, f_prime), 0)) ** (1 / (d))
             scores[f_prime][v] *= boost
+        best_node = max(available_nodes, key=lambda x: scores[f][x])
+        deployed_vnfs[f].append(best_node)
+        available_nodes.remove(best_node)
+
+        # reduce score for same function nearby
+        for neighbor in nx.neighbors(G, best_node):
+            scores[f][neighbor] *= 0.7 # decay factor
+
+        # Increase score for parallelizeable functions
+        for f_prime in F:
+            if np.random.rand() < 0.5: #assunming 50% chance of parallelization
+                for neighbor in nx.neighbors(G, best_node):
+                    scores[f_prime][neighbor] *= 1.2 # boost factor
 
 # Print deployed VNF instances
 print("\n--- VNF Deployment ---")
@@ -140,6 +194,11 @@ for f in deployed_vnfs:
 #         print(f"\nProcessing Chain: {chain['source']} → {chain['destination']} with functions {chain['functions']}")   
 #         assigned_path = []
 #         total_delay = 0
+
+    for chain in chains:
+        print(f"\nProcessing Chain: {chain['source']} → {chain['destination']} with functions {chain['functions']}")
+        assigned_path = []
+        total_delay = 0
 
 #         for f in chain['functions']:
 #             possible_nodes = deployed_vnfs.get(f, [])
@@ -162,6 +221,9 @@ for f in deployed_vnfs:
 #         print(f"✅ Total delay for chain: {total_delay} ms")
         
 #         assignments[chain['source'], chain['destination']] = {"path":assigned_path, "delay":total_delay}
+        print(f"✅ Total delay for chain: {total_delay} ms")
+
+        assignments[chain['source'], chain['destination']] = {"path":assigned_path, "delay":total_delay}
 
 #     return assignments
 
@@ -194,6 +256,10 @@ for f in deployed_vnfs:
         
 #         # Draw the path in a unique color
 #         nx.draw_networkx_edges(G, pos, edgelist=edges, edge_color=[colors[i]], width=2.5)
+        edges = [(path[i], path[i + 1]) for i in range(len(path) - 1)]
+
+        # Draw the path in a unique color
+        nx.draw_networkx_edges(G, pos, edgelist=edges, edge_color=[colors[i]], width=2.5)
 
 #     plt.title("Service Chains and VNF Assignments")
 #     plt.show()
