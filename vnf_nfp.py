@@ -206,6 +206,7 @@ def assign_instances(G, chains, deployed_vnfs, mu, K=3, T_func=5, T_proc=2):
     chains_sorted = sorted(chains, key=lambda x: x['arrival_rate'], reverse=True)
 
     workload = {v: 0 for v in G.nodes()}
+    remaining_capacity = {v: mu for v in G.nodes()}
     assignments = {}
 
     for chain in chains_sorted:
@@ -257,28 +258,39 @@ def assign_instances(G, chains, deployed_vnfs, mu, K=3, T_func=5, T_proc=2):
         best_candidate = None
         best_candidate_load = float('inf')
         for path, comp_time in candidate_paths:
+            candidate_utilization = max((mu - remaining_capacity[v] for v in path))
             max_load = max(workload[v] for v in path)
             if max_load < best_candidate_load:
                 best_candidate = (path, comp_time)
-                best_candidate_load = max_load
-
+                best_candidate_score = candidate_utilization
+        
         if best_candidate is None:
             print("⚠️ No valid candidate found.")
             continue
 
         chosen_path, final_time = best_candidate
+        last_node = chosen_path[-1]
+        try:
+            dest_delay = nx.shortest_path_length(G, source=last_node, target=chain['destination'], weight='delay')
+            final_time += dest_delay
+            chosen_path.append(chain['destination'])
+        except nx.NetworkXNoPath:
+            print(f"⚠️ No path from last node {last_node} to destination {chain['destination']}. Skipping chain.")
+            continue
 
-        for node in chosen_path:
+        for node in chosen_path[:-1]:  # Exclude destination node from workload update
             workload[node] += chain['arrival_rate']
+            remaining_capacity[node] -= chain['arrival_rate']
 
         assignments[(chain['source'], chain['destination'])] = {
             "path": chosen_path,
             "delay": final_time,
-            "workload": {node: workload[node] for node in chosen_path}
+            "workload": {node: workload.get(node, 0) for node in chosen_path},
+            "remaining_capacity": {node: remaining_capacity.get(node, mu) for node in chosen_path}
         }
         print(f"✅ Assigned chain from {chain['source']} to {chain['destination']}:")
-        print(f"    Path: {chosen_path}, Total Delay: {final_time:.2f} ms, Max Workload: {best_candidate_load:.2f}")
-
+        print(f"    Path: {chosen_path}, Total Delay: {final_time:.2f} ms, Max Utilization: {best_candidate_score:.2f}")
+    
     return assignments
 
 assignments = assign_instances(G, chains, deployed_vnfs, mu=0.5, K=K, T_func=T_func, T_proc=T_proc)
@@ -289,49 +301,46 @@ import matplotlib.pyplot as plt
 
 def draw_detailed_chain_plot(G, chain_key, chain_data):
     """
-    Draws a detailed plot for a specific service chain.
-
-    chain_key: Tuple (source, destination)
-    chain_data: Dictionary with keys "path", "delay", "workload"
+    Draw a detailed plot for a specific service chain, including node workload and remaining capacity.
     """
     pos = nx.spring_layout(G, seed=42)
-
     plt.figure(figsize=(10, 8))
     plt.title(f"Service Chain {chain_key[0]} → {chain_key[1]}\nPath: {chain_data['path']}, Total Delay: {chain_data['delay']:.2f} ms")
-
-    # Draw the entire network in light gray
+    
+    # Draw the full network in light gray.
     nx.draw_networkx_nodes(G, pos, node_size=500, node_color="lightgray")
     nx.draw_networkx_edges(G, pos, edge_color="lightgray", width=1)
-
-    # Draw nodes with workload info using the workload from chain_data
-    # Note: This workload only covers nodes on the chosen path for this chain.
-    node_labels = {v: f"{v}\n(load: {chain_data['workload'].get(v, 0):.2f})" for v in chain_data["path"]}
+    
+    # Annotate the chain nodes with both workload and remaining capacity.
+    node_labels = {}
+    for v in chain_data["path"]:
+        wl = chain_data["workload"].get(v, 0)
+        rem = chain_data["remaining_capacity"].get(v, 0)
+        node_labels[v] = f"{v}\n(load: {wl:.2f}, rem: {rem:.2f})"
     nx.draw_networkx_labels(G, pos, labels=node_labels, font_size=10)
-
-    # Draw edge labels with the transmission delay on each edge.
-    edge_labels = {(u, v): f"{G.edges[(u, v)]['delay']:.1f}" for u, v in G.edges() if 'delay' in G.edges[(u, v)]}
+    
+    # Label edges with the transmission delay.
+    edge_labels = {(u, v): f"{G.edges[(u, v)]['delay']:.1f}" for u, v in G.edges() if 'delay' in G.edges[(u,v)]}
     nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=8)
-
-    # Highlight the candidate path for the chain with a bold color (red)
+    
+    # Highlight the candidate path in bold red.
     chain_path = chain_data["path"]
-    chain_edges = [(chain_path[i], chain_path[i+1]) for i in range(len(chain_path) - 1)]
+    chain_edges = [(chain_path[i], chain_path[i+1]) for i in range(len(chain_path)-1)]
     nx.draw_networkx_nodes(G, pos, nodelist=chain_path, node_color="red", node_size=700)
     nx.draw_networkx_edges(G, pos, edgelist=chain_edges, edge_color="red", width=3)
-
-    # Optionally annotate nodes in the chain with their stage index.
+    
+    # Optionally annotate nodes with stage indices.
     stage_labels = {node: f"Stage {i}" for i, node in enumerate(chain_path)}
     nx.draw_networkx_labels(G, pos, labels=stage_labels, font_color="white", font_size=10)
-
+    
     plt.axis("off")
     plt.tight_layout()
     plt.show()
 
 def draw_network_with_separate_plots(G, assignments):
-    # For each chain, use its own workload info stored in the assignments
     for i, ((src, dst), data) in enumerate(assignments.items()):
         print(f"Service Chain {src} → {dst}: Path {data['path']} with Total Delay {data['delay']:.2f} ms")
-        # Pass only the per-chain workload stored in data
         draw_detailed_chain_plot(G, (src, dst), data)
 
-# Call the function to create separate plots for each service chain.
+# Call the visualization function.
 draw_network_with_separate_plots(G, assignments)
