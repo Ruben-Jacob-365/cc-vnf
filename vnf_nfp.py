@@ -141,7 +141,7 @@ for f in Nf:
 
 # deploy vnfs
 alpha = 0.5 
-Lf = { (f1, f2): 1 if f1 != f2 and np.random.rand() < 0.5 else 0 for f1 in F for f2 in F } 
+Lf = { (f1, f2): parallel_likelihood[func_index[f1]][func_index[f2]] for f1 in F for f2 in F }
 
 deployed_vnfs = { f: [] for f in F }
 node_capacity = { v: G.nodes[v]['VM_capacity'] for v in G.nodes() }
