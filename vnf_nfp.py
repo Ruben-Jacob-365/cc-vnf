@@ -30,10 +30,10 @@ for i in range(num_chains):
     functions = np.random.choice(F, chain_length, replace=False)
     arrival_rate = np.random.uniform(0.3, 0.5)
     chains.append({"source":src, "destination":dst, "functions":functions, "arrival_rate":arrival_rate})
-    print("Chain:",end=" ")
-    for j in functions:
-        print(j,end=" -> ")
-    print()
+    # print("Chain:",end=" ")
+    # for j in functions:
+    #     print(j,end=" -> ")
+    # print()
 # 2d matrix with P(fi,fj) values
 parallel_matrix = np.zeros((len(F), len(F)), dtype=int)
 
@@ -69,6 +69,11 @@ for chain in chains:
                 parallel_likelihood[idx_i][idx_j] += 1/len(chains)
                 parallel_likelihood[idx_j][idx_i] += 1/len(chains)  # Keep it symmetric
 
+#calculate mean likelihood
+n = parallel_likelihood.shape[0]
+masked_array = parallel_likelihood[~np.eye(n, dtype=bool)]
+mean_likelihood = masked_array.mean()
+
 # Display as a DataFrame for better readability (optional)
 #display 2d matrix
 print("\n--- parallelizable likelihood ---")
@@ -80,16 +85,35 @@ print(parallel_df)
 # calculate score
 def compute_scores(G, chains, F):
     scores = {f: {v:0 for v in G.nodes()} for f in F}
-
+    distance_scores = {f: {v: 0 for v in G.nodes()} for f in F}
+    cluster_scores = {f: {v: 0 for v in G.nodes()} for f in F}
     for chain in chains:
         path = nx.shortest_path(G, chain['source'], target=chain['destination'], weight='delay')
+        best_nodes = [-1 for k in range(len(chain['functions']))]
         for i,f in enumerate(chain['functions']):
-            best_position = int(len(path) * (i / len(chain['functions'])))
-            best_node = path[best_position]
+            best_position = int(len(path) * (i+1 / len(chain['functions'])))
+            best_nodes[i] = best_position
+        # print(best_nodes)
+        for i, f in enumerate(chain['functions']):
+            best_position = best_nodes[i]
+            best_next_position = best_nodes[i+1] if i+1<len(best_nodes) else len(path)-1
 
             for v in path:
-                distance_factor = 1 / (abs(path.index(v) - best_position) + 1)
-                scores[f][v] += distance_factor * (1 + nx.clustering(G, v))
+                # print(path.index(v), best_position, best_next_position)
+                distance_scores [f][v]= 1 / ((abs(path.index(v) - best_position) + abs(path.index(v)-best_next_position)))
+
+    #cluster scoring
+    cc_scores={v:nx.clustering(G, v) for v in G.nodes()}
+    cc_mean = np.mean(list(cc_scores.values()))
+    for v in G.nodes:
+        for f1 in range(len(F)):
+            for f2 in range(f1,len(F)):
+                func=F[f1]
+                cluster_scores[func][v]+=(cc_scores[v]-cc_mean)*(parallel_likelihood[f1][f2]-mean_likelihood)
+
+    for f in scores:
+        for v in scores[f]:
+            scores[f][v]=distance_scores[f][v]*(1+cluster_scores[f][v])
 
     # Print scores for debugging
     print("\n--- Score Calculations ---")
@@ -172,73 +196,73 @@ print("\n--- VNF Deployment ---")
 for f in deployed_vnfs:
     print(f"Function {f}: Deployed at nodes {deployed_vnfs[f]}")
 
-# instance assignment
-# def assign_instances(G, chains, deployed_vnfs):
-#     assignments = {}
+#instance assignment
+def assign_instances(G, chains, deployed_vnfs):
+    assignments = {}
 
     
-#     for chain in chains:
-#         print(f"\nProcessing Chain: {chain['source']} → {chain['destination']} with functions {chain['functions']}")   
-#         assigned_path = []
-#         total_delay = 0
+    for chain in chains:
+        print(f"\nProcessing Chain: {chain['source']} → {chain['destination']} with functions {chain['functions']}")
+        assigned_path = []
+        total_delay = 0
 
-#         for f in chain['functions']:
-#             possible_nodes = deployed_vnfs.get(f, [])
+        for f in chain['functions']:
+            possible_nodes = deployed_vnfs.get(f, [])
 
-#             if not possible_nodes:
-#                 print(f"Function {f} not deployed")
-#                 possible_nodes = list(G.nodes())
+            if not possible_nodes:
+                print(f"Function {f} not deployed")
+                possible_nodes = list(G.nodes())
 
-#             best_node = min(possible_nodes, key=lambda x: nx.shortest_path_length(G, source=assigned_path[-1] if assigned_path else chain['source'], target=x, weight='delay'))
-#             assigned_path.append(best_node)
+            best_node = min(possible_nodes, key=lambda x: nx.shortest_path_length(G, source=assigned_path[-1] if assigned_path else chain['source'], target=x, weight='delay'))
+            assigned_path.append(best_node)
 
-#             delay = 0
+            delay = 0
 
-#             if len(assigned_path) > 1:
-#                 prev_node = assigned_path[-2]
-#                 delay = nx.shortest_path_length(G, source=prev_node, target=best_node, weight='delay')
-#                 total_delay += delay
-#                 print(f"→ Assigned {f} to Node {best_node} (Delay: {delay} ms)")
+            if len(assigned_path) > 1:
+                prev_node = assigned_path[-2]
+                delay = nx.shortest_path_length(G, source=prev_node, target=best_node, weight='delay')
+                total_delay += delay
+                print(f"→ Assigned {f} to Node {best_node} (Delay: {delay} ms)")
 
-#         print(f"✅ Total delay for chain: {total_delay} ms")
+        print(f"✅ Total delay for chain: {total_delay} ms")
         
-#         assignments[chain['source'], chain['destination']] = {"path":assigned_path, "delay":total_delay}
+        assignments[chain['source'], chain['destination']] = {"path":assigned_path, "delay":total_delay}
 
-#     return assignments
+    return assignments
 
-# assignments = assign_instances(G, chains, deployed_vnfs)
+assignments = assign_instances(G, chains, deployed_vnfs)
 
-# # plot
-# import matplotlib.cm as cm
+# plot
+import matplotlib.cm as cm
 
-# def draw_network_with_paths(G, assignments):
-#     pos = nx.spring_layout(G)  # Layout for visualization
-#     plt.figure(figsize=(12, 8))
+def draw_network_with_paths(G, assignments):
+    pos = nx.spring_layout(G)  # Layout for visualization
+    plt.figure(figsize=(12, 8))
 
-#     # Draw base network
-#     nx.draw(G, pos, with_labels=True, node_size=500, node_color="lightgray", edge_color="gray")
+    # Draw base network
+    nx.draw(G, pos, with_labels=True, node_size=500, node_color="lightgray", edge_color="gray")
 
-#     # Generate a unique color for each chain
-#     num_chains = len(assignments)
-#     colors = cm.rainbow(np.linspace(0, 1, num_chains))
+    # Generate a unique color for each chain
+    num_chains = len(assignments)
+    colors = cm.rainbow(np.linspace(0, 1, num_chains))
 
-#     for i, ((src, dst), data) in enumerate(assignments.items()):
-#         print(f"Service Chain {src} → {dst}: Path {data['path']}")
-#         path = data["path"]
+    for i, ((src, dst), data) in enumerate(assignments.items()):
+        print(f"Service Chain {src} → {dst}: Path {data['path']}")
+        path = data["path"]
 
-#         # Ensure at least one edge exists in the path
-#         if len(path) < 2:
-#             print(f"⚠️ Warning: Chain {src} → {dst} has an incomplete path: {path}")
-#             continue  # Skip if no valid edges
+        # Ensure at least one edge exists in the path
+        if len(path) < 2:
+            print(f"⚠️ Warning: Chain {src} → {dst} has an incomplete path: {path}")
+            continue  # Skip if no valid edges
 
-#         edges = [(path[i], path[i + 1]) for i in range(len(path) - 1)]
+        edges = [(path[i], path[i + 1]) for i in range(len(path) - 1)]
         
-#         # Draw the path in a unique color
-#         nx.draw_networkx_edges(G, pos, edgelist=edges, edge_color=[colors[i]], width=2.5)
+        # Draw the path in a unique color
+        nx.draw_networkx_edges(G, pos, edgelist=edges, edge_color=[colors[i]], width=2.5)
 
-#     plt.title("Service Chains and VNF Assignments")
-#     plt.show()
+    plt.title("Service Chains and VNF Assignments")
+    plt.show()
 
-# # Call the function
-# draw_network_with_paths(G, assignments)
+# Call the function
+draw_network_with_paths(G, assignments)
 
