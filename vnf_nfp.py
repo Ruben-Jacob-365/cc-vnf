@@ -20,7 +20,7 @@ for edge in G.edges():
 F = ['FW', 'IDS', 'LB', 'NAT', 'VPN']
 service_rate = 0.5
 
-num_chains = 30
+num_chains = 3
 chains = []
 
 # generate random chains
@@ -258,11 +258,11 @@ def assign_instances(G, chains, deployed_vnfs, mu, K=3, T_func=5, T_proc=2):
         best_candidate = None
         best_candidate_load = float('inf')
         for path, comp_time in candidate_paths:
-            candidate_utilization = max((mu - remaining_capacity[v] for v in path))
-            max_load = max(workload[v] for v in path)
-            if max_load < best_candidate_load:
+            candidate_utilization = max((chain['arrival_rate'] / remaining_capacity[v]) if remaining_capacity[v] > 0 else float('inf') for v in path)
+            if candidate_utilization < best_candidate_load:
                 best_candidate = (path, comp_time)
                 best_candidate_score = candidate_utilization
+
         
         if best_candidate is None:
             print("⚠️ No valid candidate found.")
@@ -280,13 +280,14 @@ def assign_instances(G, chains, deployed_vnfs, mu, K=3, T_func=5, T_proc=2):
 
         for node in chosen_path[:-1]:  # Exclude destination node from workload update
             workload[node] += chain['arrival_rate']
-            remaining_capacity[node] -= chain['arrival_rate']
+            remaining_capacity[node] = max(0, remaining_capacity[node] - chain['arrival_rate'])
 
         assignments[(chain['source'], chain['destination'])] = {
             "path": chosen_path,
             "delay": final_time,
             "workload": {node: workload.get(node, 0) for node in chosen_path},
-            "remaining_capacity": {node: remaining_capacity.get(node, mu) for node in chosen_path}
+            "remaining_capacity": {node: remaining_capacity.get(node, mu) for node in chosen_path},
+            "candidates": candidate_paths,
         }
         print(f"✅ Assigned chain from {chain['source']} to {chain['destination']}:")
         print(f"    Path: {chosen_path}, Total Delay: {final_time:.2f} ms, Max Utilization: {best_candidate_score:.2f}")
@@ -300,39 +301,38 @@ import matplotlib.cm as cm
 import matplotlib.pyplot as plt
 
 def draw_detailed_chain_plot(G, chain_key, chain_data):
-    """
-    Draw a detailed plot for a specific service chain, including node workload and remaining capacity.
-    """
     pos = nx.spring_layout(G, seed=42)
     plt.figure(figsize=(10, 8))
-    plt.title(f"Service Chain {chain_key[0]} → {chain_key[1]}\nPath: {chain_data['path']}, Total Delay: {chain_data['delay']:.2f} ms")
-    
-    # Draw the full network in light gray.
+    plt.title(f"Service Chain {chain_key[0]} → {chain_key[1]}\nSelected Path: {chain_data['path']}, Total Delay: {chain_data['delay']:.2f} ms")
+
+    # Base graph
     nx.draw_networkx_nodes(G, pos, node_size=500, node_color="lightgray")
     nx.draw_networkx_edges(G, pos, edge_color="lightgray", width=1)
-    
-    # Annotate the chain nodes with both workload and remaining capacity.
-    node_labels = {}
-    for v in chain_data["path"]:
-        wl = chain_data["workload"].get(v, 0)
-        rem = chain_data["remaining_capacity"].get(v, 0)
-        node_labels[v] = f"{v}\n(load: {wl:.2f}, rem: {rem:.2f})"
-    nx.draw_networkx_labels(G, pos, labels=node_labels, font_size=10)
-    
-    # Label edges with the transmission delay.
-    edge_labels = {(u, v): f"{G.edges[(u, v)]['delay']:.1f}" for u, v in G.edges() if 'delay' in G.edges[(u,v)]}
-    nx.draw_networkx_edge_labels(G, pos, edge_labels=edge_labels, font_size=8)
-    
-    # Highlight the candidate path in bold red.
-    chain_path = chain_data["path"]
-    chain_edges = [(chain_path[i], chain_path[i+1]) for i in range(len(chain_path)-1)]
-    nx.draw_networkx_nodes(G, pos, nodelist=chain_path, node_color="red", node_size=700)
-    nx.draw_networkx_edges(G, pos, edgelist=chain_edges, edge_color="red", width=3)
-    
-    # Optionally annotate nodes with stage indices.
-    stage_labels = {node: f"Stage {i}" for i, node in enumerate(chain_path)}
-    nx.draw_networkx_labels(G, pos, labels=stage_labels, font_color="white", font_size=10)
-    
+    nx.draw_networkx_edge_labels(G, pos,
+        edge_labels={(u, v): f"{G.edges[(u, v)]['delay']:.1f}" for u, v in G.edges()},
+        font_size=7
+    )
+
+    # Node labels with workload/remaining capacity
+    node_labels = {v: f"{v}\n(load: {chain_data['workload'].get(v, 0):.2f}, rem: {chain_data['remaining_capacity'].get(v, 0):.2f})"
+                   for v in chain_data['path']}
+    nx.draw_networkx_labels(G, pos, labels=node_labels, font_size=9)
+
+    # Draw top K candidate paths in light colors
+    for path, _ in chain_data.get("candidates", []):
+        candidate_edges = [(path[i], path[i+1]) for i in range(len(path)-1)]
+        nx.draw_networkx_edges(G, pos, edgelist=candidate_edges, edge_color="skyblue", style="dashed", width=1.5)
+
+    # Draw final chosen path in red
+    chosen_path = chain_data["path"]
+    final_edges = [(chosen_path[i], chosen_path[i+1]) for i in range(len(chosen_path)-1)]
+    nx.draw_networkx_nodes(G, pos, nodelist=chosen_path, node_color="red", node_size=700)
+    nx.draw_networkx_edges(G, pos, edgelist=final_edges, edge_color="red", width=3)
+
+    # Stage annotation
+    stage_labels = {node: f"Stage {i}" for i, node in enumerate(chosen_path)}
+    nx.draw_networkx_labels(G, pos, labels=stage_labels, font_color="white", font_size=9)
+
     plt.axis("off")
     plt.tight_layout()
     plt.show()
