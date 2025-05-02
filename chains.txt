@@ -1,0 +1,30 @@
+Source: 2, Destination: 9, Functions: ['NAT', 'VPN', 'FW', 'IDS'], Arrival Rate: 0.43
+Source: 2, Destination: 8, Functions: ['VPN', 'FW'], Arrival Rate: 0.38
+Source: 4, Destination: 6, Functions: ['FW', 'VPN', 'LB'], Arrival Rate: 0.35
+Source: 1, Destination: 7, Functions: ['LB', 'VPN'], Arrival Rate: 0.34
+Source: 5, Destination: 2, Functions: ['IDS', 'LB', 'VPN', 'FW'], Arrival Rate: 0.35
+Source: 9, Destination: 3, Functions: ['NAT', 'LB'], Arrival Rate: 0.33
+Source: 4, Destination: 1, Functions: ['IDS', 'VPN'], Arrival Rate: 0.32
+Source: 0, Destination: 5, Functions: ['FW', 'NAT', 'LB', 'IDS'], Arrival Rate: 0.36
+Source: 4, Destination: 9, Functions: ['VPN', 'LB', 'FW', 'IDS'], Arrival Rate: 0.48
+Source: 8, Destination: 9, Functions: ['IDS', 'LB', 'NAT', 'FW'], Arrival Rate: 0.46
+Source: 2, Destination: 5, Functions: ['FW', 'VPN'], Arrival Rate: 0.33
+Source: 8, Destination: 0, Functions: ['FW', 'NAT', 'VPN'], Arrival Rate: 0.37
+Source: 8, Destination: 3, Functions: ['NAT', 'IDS', 'FW'], Arrival Rate: 0.33
+Source: 9, Destination: 6, Functions: ['IDS', 'NAT'], Arrival Rate: 0.39
+Source: 4, Destination: 3, Functions: ['LB', 'FW', 'IDS', 'NAT'], Arrival Rate: 0.34
+Source: 7, Destination: 1, Functions: ['FW', 'IDS'], Arrival Rate: 0.47
+Source: 5, Destination: 0, Functions: ['NAT', 'VPN'], Arrival Rate: 0.44
+Source: 1, Destination: 0, Functions: ['NAT', 'IDS'], Arrival Rate: 0.30
+Source: 4, Destination: 6, Functions: ['LB', 'NAT', 'VPN'], Arrival Rate: 0.39
+Source: 9, Destination: 7, Functions: ['VPN', 'NAT', 'LB', 'FW'], Arrival Rate: 0.48
+Source: 2, Destination: 8, Functions: ['IDS', 'NAT', 'LB'], Arrival Rate: 0.36
+Source: 5, Destination: 0, Functions: ['VPN', 'FW'], Arrival Rate: 0.33
+Source: 2, Destination: 3, Functions: ['LB', 'NAT', 'IDS'], Arrival Rate: 0.44
+Source: 1, Destination: 8, Functions: ['LB', 'FW', 'NAT'], Arrival Rate: 0.38
+Source: 6, Destination: 7, Functions: ['VPN', 'NAT', 'IDS'], Arrival Rate: 0.39
+Source: 5, Destination: 2, Functions: ['IDS', 'FW'], Arrival Rate: 0.31
+Source: 8, Destination: 3, Functions: ['LB', 'VPN', 'IDS', 'FW'], Arrival Rate: 0.49
+Source: 8, Destination: 2, Functions: ['VPN', 'NAT', 'IDS'], Arrival Rate: 0.33
+Source: 9, Destination: 6, Functions: ['NAT', 'LB'], Arrival Rate: 0.50
+Source: 3, Destination: 7, Functions: ['FW', 'VPN'], Arrival Rate: 0.41

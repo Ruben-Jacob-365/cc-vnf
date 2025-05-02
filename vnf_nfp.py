@@ -20,7 +20,7 @@ for edge in G.edges():
 F = ['FW', 'IDS', 'LB', 'NAT', 'VPN']
 service_rate = 0.5
 
-num_chains = 3
+num_chains = 30
 chains = []
 
 # generate random chains
@@ -34,6 +34,13 @@ for i in range(num_chains):
     # for j in functions:
     #     print(j,end=" -> ")
     # print()
+
+# save chains to file where each line is in the format: Source: 0, Destination: 4, Functions: ['LB','NAT','VPN','FW'], Arrival Rate: 0.42]
+with open("chains.txt", "w") as f:
+    for chain in chains:
+        f.write(f"Source: {chain['source']}, Destination: {chain['destination']}, Functions: {list(chain['functions'])}, Arrival Rate: {chain['arrival_rate']:.2f}\n")
+
+
 # 2d matrix with P(fi,fj) values
 parallel_matrix = np.zeros((len(F), len(F)), dtype=int)
 
